@@ -20,7 +20,7 @@ To create a sparse matrix run:
 
 where `/path/to/score_dir` is the path to the path the to the weights directory where FUSION formatted weigths (.wgt.RDat) have been downloaded. This script converts the `.wgt.RDat` files to `.score` files, it then creates a `unique.snps` file containing the unique snps across all genes. Finally it runs `score_to_sparse.py` to convert the individual scores file to a weights scipy file (`W_TWAS.npz` a sparse matrix of the weights, `gene_names.txt` for the rows and `snps.txt` for the columns). 
 
-N.B. This function is currently very slow when there are a large number of SNPs. I believe the main slowdown is the SNP matching performed on `line 78` of `score_to_sparse.py` which has an implicit for loop - although I need to line profile to verify that this is the slowdown. 
+N.B. This function is currently very slow when there are a large number of SNPs. I believe the main slowdown is the SNP matching performed on `line 77` of `score_to_sparse.py` which has an implicit for loop - although I need to line profile to verify that this is the slowdown. 
 
 ## Performing TWAS Projection at the Individual Level
 
