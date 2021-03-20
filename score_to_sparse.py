@@ -1,9 +1,8 @@
 import glob
+import os
 import pandas as pd
 import numpy as np
-import os
-from scipy.io import mmwrite
-from scipy.sparse import coo_matrix, vstack, diags
+from scipy.sparse import coo_matrix
 import scipy as sp
 import progressbar
 import argparse

@@ -1,14 +1,9 @@
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-from pyplink import PyPlink
-from random import sample
-import scipy.sparse
-import sys
-sys.path.append('/home/rloughna/code/python_utils/')
 import os
-from pandas_plink import read_plink1_bin, read_plink
 import argparse
+import pandas as pd
+import numpy as np
+import scipy.sparse
+from pandas_plink import read_plink1_bin, read_plink
 
 def __gene_reduce(gene_list, gene_map):
     """" 
@@ -21,13 +16,13 @@ def __gene_reduce(gene_list, gene_map):
     
     """
 
-    gene_list_ind = gene_list.isin(gene_map.index)
+    # Find intersection
+    intersect_genes = list(set(gene_list) & set(gene_map.index))
+    gene_list_ind = gene_list.isin(intersect_genes)
     # Raise Error if there seems to be a poor mapping to gene list
     if (sum(gene_list_ind)/len(gene_list_ind))<0.99:
         raise Exception('Some genes are not found in mapping - make sure that you are using the correct g_build')
-    gene_map_ind = gene_map.index.isin(gene_list[gene_list_ind])
-    gene_map = gene_map.loc[gene_map_ind, :]
-    return(gene_list_ind, gene_map)
+    return(gene_list_ind, gene_map.loc[intersect_genes, :])
 
 
 def gene_map(gene_list, g_build, multimatch_filt=None):
@@ -61,13 +56,13 @@ def gene_map(gene_list, g_build, multimatch_filt=None):
         index_col = 'Gene name'
         new_col = 'Gene stable ID'
         
-    gene_map_file = f'''/home/rloughna/data/Gene_Ensmbl_Map/GRCh{g_build}.p13.biomart.tsv'''
+    gene_map_file = f'''{os.path.dirname(os.path.realpath(__file__))}/Gene_Ensmbl_Map/GRCh{g_build}.p13.biomart.tsv'''
     gene_map = pd.read_csv(gene_map_file, sep='\t', index_col=index_col)
     gene_map = gene_map.loc[~gene_map.index.duplicated(keep='first')]  # drop rows with duplicated indices
     
     # Match genes
     gene_list_ind, gene_map = __gene_reduce(gene_list, gene_map)
-    
+
     # If there are duplicates and multimatch_filt is defined
     if (multimatch_filt != None) and (gene_map[new_col].duplicated().sum()!=0):
         if 'gene_version' in multimatch_filt.keys():
@@ -97,12 +92,30 @@ def gene_map(gene_list, g_build, multimatch_filt=None):
             # Repeat lines above
             gene_list_ind, gene_map = __gene_reduce(gene_list, gene_map)
             
-    reorder_i = np.where(gene_list[gene_list_ind].isin(gene_map.index))
-
+    reorder_i = np.where(gene_list[gene_list_ind].isin(gene_map.index))[0]
     return (gene_list_ind, gene_map.iloc[reorder_i, :][new_col])
 
 
-def TWAS_project(genetics, twas_sparse_dir, output_file):
+def TWAS_project(genetics, twas_sparse_dir, output_file, g_build):
+    """
+    This function takes individual level genetics plink files (.bed) and projects it using the 
+    TWAS weights defined by using sparse W_TWAS.npz, gene_names.txt and snps.txt files in twas_sparse_dir. 
+    These weight files are created by score_to_sparse.py in S1_create_sparse_weights.sh.
+    
+    Parameters
+    ----------
+    genetics : str
+        Defines path to plink genetics file (e.g. /path/to/all_chroms.bed).
+    twas_sparse_dir : str
+        Path to directory that contains W_TWAS.npz, gene_names.txt and snps.txt files, created by score_to_sparse.py
+    output_file : str
+        Path to out file for saving TWAS projection, should end in '.tsv' or '.hdf'
+    g_build : int
+        Value of 37 or 38 depending on the ensmble genome build .
+    Returns
+    ----------
+    None
+    """
     precision=np.float32
     log_file = output_file.split('.')[0] + '.log'
     if os.path.isfile(log_file): os.remove(log_file)
@@ -193,11 +206,11 @@ def TWAS_project(genetics, twas_sparse_dir, output_file):
         twas_results.loc[sub_G.sample.values, :] = np.array(res.values).astype(precision)
         
     # Rename genes from ensemble to gene symbols
-    # twas_ind, new_names = gene_map(twas_results.columns, 
-    #                         g_build=37, 
-    #                         multimatch_filt={'transcript_filter':'protein_coding','gene_version': 'newest'})
-    # twas_results = twas_results.iloc[:, twas_ind.values]
-    # twas_results.columns = new_names
+    twas_ind, new_names = gene_map(twas_results.columns, 
+                            g_build=g_build, 
+                            multimatch_filt={'transcript_filter':'protein_coding','gene_version': 'newest'})
+    twas_results = twas_results.iloc[:, twas_ind.values]
+    twas_results.columns = new_names
     # Need to change precission - also make sure that each dimension is in similar range
     print('Saving final results')
     if '.tsv' in twas_results:
@@ -211,7 +224,8 @@ if __name__ == "__main__":
 
     parser.add_argument('-genetics', help='Path to genetics with # replacing chromosome', type=str)
     parser.add_argument('-twas_sparse_dir', help='Directory of TWAS sparse form', type=str, default=None)
-    parser.add_argument('-output_file', help='Validation dataset', type=str, default='none')
+    parser.add_argument('-g_build', help='Genome build (37 or 38), for converting Enesemble IDs to gene names', type=int, default=37)
+    parser.add_argument('-output_file', help='Output file for TWAS projection, should end in .tsv or .hdf', type=str, default='none')
 
     opt = parser.parse_args()
 
@@ -222,4 +236,4 @@ if __name__ == "__main__":
     twas_sparse_dir=opt.twas_sparse_dir
 
     genetics = opt.genetics.replace('#', '*')
-    TWAS_project(genetics, twas_sparse_dir, opt.output_file)
+    TWAS_project(genetics, twas_sparse_dir, opt.output_file, opt.g_build)
