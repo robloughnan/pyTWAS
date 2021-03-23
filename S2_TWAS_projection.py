@@ -213,7 +213,7 @@ def TWAS_project(genetics, twas_sparse_dir, output_file, g_build):
     twas_results.columns = new_names
     # Need to change precission - also make sure that each dimension is in similar range
     print('Saving final results')
-    if '.tsv' in twas_results:
+    if '.tsv' in output_file:
         twas_results.to_csv(output_file, sep='\t')
     else:
         twas_results.to_hdf(output_file, key='twas')
