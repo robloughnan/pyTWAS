@@ -6,9 +6,9 @@ The scripts should work but are still a work in progress. Specifically the creat
 
 # Dependancies
 
-Python dependancies are `pandas`, `numpy`, `scipy`, `progressbar`, `pandas_plink` and `argparse`. Each can be installed using pip or conda e.g.:
+Python dependancies are `pandas`, `numpy`, `scipy`, `progressbar2`, `pandas_plink` and `argparse`. Each can be installed using pip or conda e.g.:
 
-``pip install progressbar``
+``pip install progressbar2``
 
 # Usage
 
