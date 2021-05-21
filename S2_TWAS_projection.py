@@ -154,7 +154,7 @@ def TWAS_project(genetics, twas_sparse_dir, output_file, g_build):
     for i in range(len(windows)-1):
         with open(log_file, 'a') as log_file_id:
             log_file_id.write('Processing window of individuals ' + str(windows[i]) + ':' + str(windows[i+1]) + '\n')
-        print('Processing window of individuals ' + str(windows[i]) + ':' + str(windows[i+1]))
+        log_file_id.write('Processing window of individuals ' + str(windows[i]) + ':' + str(windows[i+1]))
         # Match snps
         match_snps = pd.Series(G.variant.values).isin(twas_snps.string)
         match_snps_flipped = pd.Series(G.variant_flipped.values).isin(twas_snps.string)
@@ -188,11 +188,13 @@ def TWAS_project(genetics, twas_sparse_dir, output_file, g_build):
         W_twas = W_twas[:, reorder_i]
         
         ## Trim on missingness 
-        print('\t Triming on missingness')   
+        log_file_id.write('\t Triming on missingness')   
         # Remove SNPs with more than 10% missingness
-        keep_snps = ((100*sub_G.isnull().sum(axis=0).values/sub_G.shape[0])<10)
+        keep_snps = ((sub_G.isnull().sum(axis=0).values/sub_G.shape[0])<0.1)
+        log_file_id.write(f'\t Not computing TWAS for {sum(~keep_snps)} out of {len(keep_snps)} due to missingness (>10%) of individuals')
         # Remove individuals with more than 5% missingness
-        keep_indiv = ((100*sub_G.isnull().sum(axis=1).values/sub_G.shape[1])<5)
+        keep_indiv = ((sub_G.isnull().sum(axis=1).values/sub_G.shape[1])<0.05)
+        log_file_id.write(f'\t Not computing TWAS for {sum(~keep_indiv)} out of {len(keep_indiv)} due to missingness (>5%) of snps')
         # Restrict Weight Matrix
         W_twas = W_twas[:, keep_snps]
         twas_snps = twas_snps.iloc[keep_snps, :]
@@ -201,7 +203,7 @@ def TWAS_project(genetics, twas_sparse_dir, output_file, g_build):
         # Replace reamining null in sub_G with zero 
         sub_G = sub_G.fillna(0)
         
-        print('\t Imputing gene expression')
+        log_file_id.write('\t Imputing gene expression')
         res = sub_G * W_twas.T
         twas_results.loc[sub_G.sample.values, :] = np.array(res.values).astype(precision)
         
@@ -212,7 +214,7 @@ def TWAS_project(genetics, twas_sparse_dir, output_file, g_build):
     twas_results = twas_results.iloc[:, twas_ind.values]
     twas_results.columns = new_names
     # Need to change precission - also make sure that each dimension is in similar range
-    print('Saving final results')
+    log_file_id.write('Saving final results')
     if '.tsv' in output_file:
         twas_results.to_csv(output_file, sep='\t')
     else:
