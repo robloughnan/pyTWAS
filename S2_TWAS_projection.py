@@ -4,6 +4,19 @@ import pandas as pd
 import numpy as np
 import scipy.sparse
 from pandas_plink import read_plink1_bin, read_plink
+import sys
+
+class Tee(object):
+    # Class to write to both console and log file
+    def __init__(self, *files):
+        self.files = files
+    def write(self, obj):
+        for f in self.files:
+            f.write(obj)
+            f.flush() # If you want the output to be visible immediately
+    def flush(self) :
+        for f in self.files:
+            f.flush()
 
 def __gene_reduce(gene_list, gene_map):
     """" 
@@ -96,7 +109,7 @@ def gene_map(gene_list, g_build, multimatch_filt=None):
     return (gene_list_ind, gene_map.iloc[reorder_i, :][new_col])
 
 
-def TWAS_project(genetics, twas_sparse_dir, output_file, g_build):
+def TWAS_project(genetics, twas_sparse_dir, output_file, g_build, log_fid):
     """
     This function takes individual level genetics plink files (.bed) and projects it using the 
     TWAS weights defined by using sparse W_TWAS.npz, gene_names.txt and snps.txt files in twas_sparse_dir. 
@@ -117,11 +130,9 @@ def TWAS_project(genetics, twas_sparse_dir, output_file, g_build):
     None
     """
     precision=np.float32
-    log_file = output_file.split('.')[0] + '.log'
-    if os.path.isfile(log_file): os.remove(log_file)
 
-    with open(log_file, 'a') as log_file_id:
-        log_file_id.write(f'''Reading TWAS_weights: {twas_sparse_dir}\n''')
+    # with open(log_file, 'a') as log_file_id:
+    print(f'''Reading TWAS_weights: {twas_sparse_dir}\n''')
     twas_snps = pd.read_csv(f'''{twas_sparse_dir}/snps.txt''', header=None, sep='\t')
     twas_genes = pd.read_csv(f'''{twas_sparse_dir}/gene_names.txt''', header=None).iloc[:, 0]
     W_twas = scipy.sparse.load_npz(f'''{twas_sparse_dir}/W_TWAS.npz''')
@@ -131,8 +142,8 @@ def TWAS_project(genetics, twas_sparse_dir, output_file, g_build):
     twas_snps.loc[:, 'string'] = twas_snps.apply(lambda x: ''.join(x), axis=1)
 
     # Read in Genetics
-    with open(log_file, 'a') as log_file_id:
-        log_file_id.write(f'''Reading genetics {genetics}\n''')
+    # with open(log_file, 'a') as log_file_id:
+    print(f'''Reading genetics {genetics}\n''')
     G  = read_plink1_bin(genetics)
     
     # Concatonate strings with allele codes to deal with multi allele
@@ -152,9 +163,7 @@ def TWAS_project(genetics, twas_sparse_dir, output_file, g_build):
     # Process in 1000 individual chunks
     windows = np.arange(0, len(G.sample), 1000).tolist() + [len(G.sample)]
     for i in range(len(windows)-1):
-        with open(log_file, 'a') as log_file_id:
-            log_file_id.write('Processing window of individuals ' + str(windows[i]) + ':' + str(windows[i+1]) + '\n')
-        log_file_id.write('Processing window of individuals ' + str(windows[i]) + ':' + str(windows[i+1]))
+        print('Processing window of individuals ' + str(windows[i]) + ':' + str(windows[i+1]))
         # Match snps
         match_snps = pd.Series(G.variant.values).isin(twas_snps.string)
         match_snps_flipped = pd.Series(G.variant_flipped.values).isin(twas_snps.string)
@@ -188,13 +197,13 @@ def TWAS_project(genetics, twas_sparse_dir, output_file, g_build):
         W_twas = W_twas[:, reorder_i]
         
         ## Trim on missingness 
-        log_file_id.write('\t Triming on missingness')   
         # Remove SNPs with more than 10% missingness
         keep_snps = ((sub_G.isnull().sum(axis=0).values/sub_G.shape[0])<0.1)
-        log_file_id.write(f'\t Not computing TWAS for {sum(~keep_snps)} out of {len(keep_snps)} due to missingness (>10%) of individuals')
         # Remove individuals with more than 5% missingness
         keep_indiv = ((sub_G.isnull().sum(axis=1).values/sub_G.shape[1])<0.05)
-        log_file_id.write(f'\t Not computing TWAS for {sum(~keep_indiv)} out of {len(keep_indiv)} due to missingness (>5%) of snps')
+        print('\t Triming on missingness')  
+        print(f'\t Not computing TWAS for {sum(~keep_snps)} snps out of {len(keep_snps)} due to missingness (>10%) of individuals')
+        print(f'\t Not computing TWAS for {sum(~keep_indiv)} individuals out of {len(keep_indiv)} due to missingness (>5%) of snps')
         # Restrict Weight Matrix
         W_twas = W_twas[:, keep_snps]
         twas_snps = twas_snps.iloc[keep_snps, :]
@@ -203,7 +212,7 @@ def TWAS_project(genetics, twas_sparse_dir, output_file, g_build):
         # Replace reamining null in sub_G with zero 
         sub_G = sub_G.fillna(0)
         
-        log_file_id.write('\t Imputing gene expression')
+        print('\t Imputing gene expression')
         res = sub_G * W_twas.T
         twas_results.loc[sub_G.sample.values, :] = np.array(res.values).astype(precision)
         
@@ -214,11 +223,12 @@ def TWAS_project(genetics, twas_sparse_dir, output_file, g_build):
     twas_results = twas_results.iloc[:, twas_ind.values]
     twas_results.columns = new_names
     # Need to change precission - also make sure that each dimension is in similar range
-    log_file_id.write('Saving final results')
+    print('Saving final results')
     if '.tsv' in output_file:
         twas_results.to_csv(output_file, sep='\t')
     else:
         twas_results.to_hdf(output_file, key='twas')
+    log_fid.close()
 
 
 if __name__ == "__main__":
@@ -231,6 +241,11 @@ if __name__ == "__main__":
 
     opt = parser.parse_args()
 
+    log_file = opt.output_file.split('.')[0] + '.log'
+    if os.path.isfile(log_file): os.remove(log_file)
+    f = open(log_file, 'w')
+    sys.stdout = Tee(sys.stdout, f)
+
     # Print arguments to console
     for key, term in opt.__dict__.items():
         print(str(key) + ':\t' + str(term) + "\n")
@@ -238,4 +253,5 @@ if __name__ == "__main__":
     twas_sparse_dir=opt.twas_sparse_dir
 
     genetics = opt.genetics.replace('#', '*')
-    TWAS_project(genetics, twas_sparse_dir, opt.output_file, opt.g_build)
+
+    TWAS_project(genetics, twas_sparse_dir, opt.output_file, opt.g_build, f)
